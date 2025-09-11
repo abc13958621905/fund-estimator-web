@@ -96,8 +96,44 @@
             100% { transform: rotate(360deg); }
         }
         
-        .date-input {
-            border-radius: 10px;
+        .statistics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat-item {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            padding: 15px 10px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        .stat-value {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: #7f8c8d;
+            line-height: 1.2;
+        }
+        
+        .success-rate { color: #27ae60; }
+        .fail-rate { color: #e74c3c; }
+        .inactive-rate { color: #f39c12; }
+        
+        .update-time {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            text-align: center;
+            margin-top: 15px;
+        }
             border: 2px solid #e0e0e0;
             padding: 12px;
             font-size: 16px;
@@ -171,20 +207,17 @@
         <div class="card estimate-card" id="estimateResult" style="display: none;">
             <h5 id="fundName">-</h5>
             <div class="estimate-value" id="estimateValue">+0.00%</div>
-            <div class="row text-center">
-                <div class="col-4">
-                    <div class="h6">总持仓</div>
-                    <div id="totalWeight">-</div>
-                </div>
-                <div class="col-4">
-                    <div class="h6">成功率</div>
-                    <div id="successRate">-</div>
-                </div>
-                <div class="col-4">
-                    <div class="h6">更新时间</div>
-                    <div id="updateTime">-</div>
-                </div>
+            
+            <!-- 统计信息 -->
+            <div id="statisticsInfo">
+                <!-- 由JavaScript动态填充 -->
             </div>
+            
+            <!-- 更新时间 -->
+            <div id="updateTime">
+                <!-- 由JavaScript动态填充 -->
+            </div>
+            
             <button class="btn btn-outline-primary mt-3" onclick="showFundsList()">
                 <i class="bi bi-arrow-left"></i> 返回列表
             </button>
@@ -355,18 +388,72 @@
             // 更新数据
             document.getElementById('fundName').textContent = fundName;
             
-            const estimateValue = data.estimated_change;
-            const estimateElement = document.getElementById('estimateValue');
-            estimateElement.textContent = (estimateValue >= 0 ? '+' : '') + (estimateValue * 100).toFixed(2) + '%';
+            if (currentMode === 'review' && data.historical_change !== undefined) {
+                // 回顾模式：显示真实历史数据
+                const changeValue = data.historical_change;
+                const changeElement = document.getElementById('estimateValue');
+                
+                if (changeValue === null) {
+                    changeElement.textContent = '数据获取失败';
+                    changeElement.className = 'estimate-value neutral';
+                } else {
+                    changeElement.textContent = (changeValue >= 0 ? '+' : '') + changeValue.toFixed(2) + '%';
+                    changeElement.className = 'estimate-value ' + 
+                        (changeValue > 0 ? 'positive' : changeValue < 0 ? 'negative' : 'neutral');
+                }
+                
+                // 回顾模式的统计信息
+                const statsHtml = `
+                    <div class="statistics-grid">
+                        <div class="stat-item">
+                            <div class="stat-value">${data.target_date}</div>
+                            <div class="stat-label">查询日期</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${data.data_source}</div>
+                            <div class="stat-label">数据来源</div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('statisticsInfo').innerHTML = statsHtml;
+                
+            } else {
+                // 实时模式：显示估算值和统计信息
+                const estimateValue = data.estimated_change || 0;
+                const estimateElement = document.getElementById('estimateValue');
+                estimateElement.textContent = (estimateValue >= 0 ? '+' : '') + (estimateValue * 100).toFixed(2) + '%';
+                
+                // 设置颜色
+                estimateElement.className = 'estimate-value ' + 
+                    (estimateValue > 0 ? 'positive' : estimateValue < 0 ? 'negative' : 'neutral');
+                
+                // 实时模式的统计信息
+                const stats = data.statistics || {};
+                const statsHtml = `
+                    <div class="statistics-grid">
+                        <div class="stat-item">
+                            <div class="stat-value success-rate">${stats['成功计算占比'] || '0.0%'}</div>
+                            <div class="stat-label">成功计算占比</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value fail-rate">${stats['查询失败占比'] || '0.0%'}</div>
+                            <div class="stat-label">查询失败占比</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value inactive-rate">${stats['未开盘市场占比'] || '0.0%'}</div>
+                            <div class="stat-label">未开盘市场占比</div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('statisticsInfo').innerHTML = statsHtml;
+            }
             
-            // 设置颜色
-            estimateElement.className = 'estimate-value ' + 
-                (estimateValue > 0 ? 'positive' : estimateValue < 0 ? 'negative' : 'neutral');
-            
-            // 更新其他信息
-            document.getElementById('totalWeight').textContent = (data.market_analysis.total_weight * 100).toFixed(1) + '%';
-            document.getElementById('successRate').textContent = (data.market_analysis.success_rate * 100).toFixed(1) + '%';
-            document.getElementById('updateTime').textContent = data.update_time.split(' ')[1];
+            // 更新时间显示
+            document.getElementById('updateTime').innerHTML = `
+                <div class="update-time">
+                    <i class="bi bi-clock"></i> 更新时间: ${data.update_time || '未知'}
+                </div>
+            `;
         }
         
         // 显示基金列表
