@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📈 基金估值助手</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        
+        .main-container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .card {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .fund-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .fund-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+        
+        .mode-selector {
+            display: flex;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .mode-btn {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .mode-btn.active {
+            background: rgba(255, 255, 255, 0.9);
+            color: #667eea;
+        }
+        
+        .estimate-card {
+            text-align: center;
+            padding: 30px 20px;
+        }
+        
+        .estimate-value {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+        
+        .positive { color: #e74c3c; }
+        .negative { color: #27ae60; }
+        .neutral { color: #7f8c8d; }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .date-input {
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+            padding: 12px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-weight: 600;
+        }
+        
+        .market-status {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 576px) {
+            .main-container {
+                padding: 10px;
+            }
+            
+            .estimate-value {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <!-- 标题 -->
+        <div class="text-center text-white mb-4">
+            <h1 class="display-6 fw-bold">📈 基金估值助手</h1>
+            <p class="lead opacity-75">实时追踪 · 智能分析</p>
+        </div>
+        
+        <!-- 模式选择 -->
+        <div class="mode-selector">
+            <button class="mode-btn active" id="realtimeBtn" onclick="switchMode('realtime')">
+                <i class="bi bi-lightning-charge"></i> 实时估值
+            </button>
+            <button class="mode-btn" id="reviewBtn" onclick="switchMode('review')">
+                <i class="bi bi-calendar-check"></i> 回顾模式
+            </button>
+        </div>
+        
+        <!-- 市场状态 -->
+        <div class="card">
+            <div class="card-body text-center market-status">
+                <i class="bi bi-clock"></i>
+                <span id="marketStatus">正在获取市场状态...</span>
+            </div>
+        </div>
+        
+        <!-- 日期选择 (回顾模式) -->
+        <div class="card" id="dateSelector" style="display: none;">
+            <div class="card-body">
+                <label class="form-label">选择查询日期</label>
+                <input type="date" class="form-control date-input" id="targetDate">
+                <small class="text-muted">选择要回顾的具体日期</small>
+            </div>
+        </div>
+        
+        <!-- 基金列表 -->
+        <div id="fundsList"></div>
+        
+        <!-- 估值结果 -->
+        <div class="card estimate-card" id="estimateResult" style="display: none;">
+            <h5 id="fundName">-</h5>
+            <div class="estimate-value" id="estimateValue">+0.00%</div>
+            <div class="row text-center">
+                <div class="col-4">
+                    <div class="h6">总持仓</div>
+                    <div id="totalWeight">-</div>
+                </div>
+                <div class="col-4">
+                    <div class="h6">成功率</div>
+                    <div id="successRate">-</div>
+                </div>
+                <div class="col-4">
+                    <div class="h6">更新时间</div>
+                    <div id="updateTime">-</div>
+                </div>
+            </div>
+            <button class="btn btn-outline-primary mt-3" onclick="showFundsList()">
+                <i class="bi bi-arrow-left"></i> 返回列表
+            </button>
+        </div>
+        
+        <!-- 加载动画 -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p class="text-white">正在计算估值...</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentMode = 'realtime';
+        let funds = [];
+        
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            loadMarketStatus();
+            loadFunds();
+        });
+        
+        // 切换模式
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // 更新按钮状态
+            document.getElementById('realtimeBtn').classList.toggle('active', mode === 'realtime');
+            document.getElementById('reviewBtn').classList.toggle('active', mode === 'review');
+            
+            // 显示/隐藏日期选择
+            document.getElementById('dateSelector').style.display = mode === 'review' ? 'block' : 'none';
+            
+            // 更新市场状态显示
+            loadMarketStatus();
+        }
+        
+        // 加载市场状态
+        async function loadMarketStatus() {
+            try {
+                const response = await fetch('/api/market-status');
+                const data = await response.json();
+                
+                let statusText = '';
+                if (currentMode === 'realtime') {
+                    statusText = data.is_trading_time ? 
+                        `🟢 实时估值模式 (${data.current_time})` : 
+                        `🔴 非交易时间 (${data.current_time})`;
+                } else {
+                    statusText = `📅 回顾模式 - 选择历史日期查询`;
+                }
+                
+                document.getElementById('marketStatus').textContent = statusText;
+            } catch (error) {
+                console.error('获取市场状态失败:', error);
+                document.getElementById('marketStatus').textContent = '市场状态获取失败';
+            }
+        }
+        
+        // 加载基金列表
+        async function loadFunds() {
+            try {
+                const response = await fetch('/api/funds');
+                const data = await response.json();
+                
+                if (data.funds) {
+                    funds = data.funds;
+                    renderFundsList();
+                } else {
+                    document.getElementById('fundsList').innerHTML = 
+                        '<div class="card"><div class="card-body text-center text-danger">无法获取基金列表</div></div>';
+                }
+            } catch (error) {
+                console.error('加载基金列表失败:', error);
+                document.getElementById('fundsList').innerHTML = 
+                    '<div class="card"><div class="card-body text-center text-danger">网络错误，请重试</div></div>';
+            }
+        }
+        
+        // 渲染基金列表
+        function renderFundsList() {
+            const container = document.getElementById('fundsList');
+            container.innerHTML = '';
+            
+            funds.forEach(fund => {
+                const fundCard = document.createElement('div');
+                fundCard.className = 'card fund-card';
+                fundCard.onclick = () => calculateEstimate(fund.code, fund.name);
+                
+                fundCard.innerHTML = `
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="card-title mb-1">${fund.name}</h6>
+                                <small class="text-muted">${fund.code}</small>
+                            </div>
+                            <div class="text-end">
+                                <i class="bi bi-chevron-right"></i>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(fundCard);
+            });
+        }
+        
+        // 计算估值
+        async function calculateEstimate(fundCode, fundName) {
+            // 验证日期（回顾模式）
+            let targetDate = null;
+            if (currentMode === 'review') {
+                targetDate = document.getElementById('targetDate').value;
+                if (!targetDate) {
+                    alert('请选择查询日期');
+                    return;
+                }
+                
+                // 验证日期
+                const dateValid = await validateDate(targetDate);
+                if (!dateValid.valid) {
+                    alert(dateValid.error);
+                    return;
+                }
+            }
+            
+            // 显示加载动画
+            document.getElementById('fundsList').style.display = 'none';
+            document.getElementById('estimateResult').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/estimate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        fund_code: fundCode,
+                        mode: currentMode,
+                        target_date: targetDate
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // 显示估值结果
+                showEstimateResult(data, fundName);
+                
+            } catch (error) {
+                console.error('估值计算失败:', error);
+                alert('估值计算失败: ' + error.message);
+                showFundsList();
+            }
+        }
+        
+        // 显示估值结果
+        function showEstimateResult(data, fundName) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('fundsList').style.display = 'none';
+            document.getElementById('estimateResult').style.display = 'block';
+            
+            // 更新数据
+            document.getElementById('fundName').textContent = fundName;
+            
+            const estimateValue = data.estimated_change;
+            const estimateElement = document.getElementById('estimateValue');
+            estimateElement.textContent = (estimateValue >= 0 ? '+' : '') + (estimateValue * 100).toFixed(2) + '%';
+            
+            // 设置颜色
+            estimateElement.className = 'estimate-value ' + 
+                (estimateValue > 0 ? 'positive' : estimateValue < 0 ? 'negative' : 'neutral');
+            
+            // 更新其他信息
+            document.getElementById('totalWeight').textContent = (data.market_analysis.total_weight * 100).toFixed(1) + '%';
+            document.getElementById('successRate').textContent = (data.market_analysis.success_rate * 100).toFixed(1) + '%';
+            document.getElementById('updateTime').textContent = data.update_time.split(' ')[1];
+        }
+        
+        // 显示基金列表
+        function showFundsList() {
+            document.getElementById('estimateResult').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('fundsList').style.display = 'block';
+        }
+        
+        // 验证日期
+        async function validateDate(date) {
+            try {
+                const response = await fetch('/api/validate-date', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ date: date })
+                });
+                
+                return await response.json();
+            } catch (error) {
+                return { valid: false, error: '日期验证失败' };
+            }
+        }
+    </script>
+</body>
+</html>

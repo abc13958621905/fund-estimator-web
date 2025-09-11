@@ -1,0 +1,7 @@
+Flask==2.3.3
+Flask-CORS==4.0.0
+pandas==2.1.0
+yfinance==0.2.18
+requests==2.31.0
+pytz==2023.3
+gunicorn==21.2.0
