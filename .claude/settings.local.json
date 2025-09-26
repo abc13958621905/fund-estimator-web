@@ -3,7 +3,9 @@
     "allow": [
       "mcp__edgeone-pages__deploy_html",
       "mcp__edgeone-pages__deploy_folder_or_zip",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
