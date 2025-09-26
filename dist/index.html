@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📈 基金估值助手 - 演示版</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        .main-container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .fund-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .fund-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .estimate-card {
+            text-align: center;
+            padding: 30px 20px;
+        }
+
+        .estimate-value {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+
+        .positive { color: #e74c3c; }
+        .negative { color: #27ae60; }
+        .neutral { color: #7f8c8d; }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-weight: 600;
+        }
+
+        .demo-notice {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 576px) {
+            .main-container { padding: 10px; }
+            .estimate-value { font-size: 2.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <!-- 标题 -->
+        <div class="text-center text-white mb-4">
+            <h1 class="display-6 fw-bold">📈 基金估值助手</h1>
+            <p class="lead opacity-75">实时追踪 · 智能分析</p>
+        </div>
+
+        <!-- 演示说明 -->
+        <div class="demo-notice">
+            <h5><i class="bi bi-info-circle"></i> 前端演示版本</h5>
+            <p class="mb-2">这是基金估值应用的前端UI演示，展示了完整的界面设计。</p>
+            <small><strong>完整功能需要配合Python后端API</strong></small>
+        </div>
+
+        <!-- 功能介绍 -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-star"></i> 核心功能</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-lightning-charge text-primary me-2"></i>
+                            <small>实时估值</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-globe-asia-australia text-success me-2"></i>
+                            <small>全球市场</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-graph-up-arrow text-warning me-2"></i>
+                            <small>智能分析</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-phone text-info me-2"></i>
+                            <small>移动适配</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 基金列表演示 -->
+        <div id="fundsList">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-list-ul"></i> 演示基金列表</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="fund-card" onclick="showDemo('华夏中证5G通信主题ETF联接A', '007455')">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-title mb-1">华夏中证5G通信主题ETF联接A</h6>
+                                    <small class="text-muted">007455</small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-success">可用</span>
+                                    <i class="bi bi-chevron-right"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="fund-card" onclick="showDemo('汇添富中证生物科技指数A', '012922')">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-title mb-1">汇添富中证生物科技指数A</h6>
+                                    <small class="text-muted">012922</small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-success">可用</span>
+                                    <i class="bi bi-chevron-right"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="fund-card" onclick="showDemo('易方达蓝筹精选混合', '016531')">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-title mb-1">易方达蓝筹精选混合</h6>
+                                    <small class="text-muted">016531</small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-success">可用</span>
+                                    <i class="bi bi-chevron-right"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 加载动画 -->
+        <div class="loading text-white" id="loading">
+            <div class="spinner"></div>
+            <p>正在计算估值...</p>
+        </div>
+
+        <!-- 估值结果演示 -->
+        <div class="card estimate-card" id="demoResult" style="display: none;">
+            <h5 id="demoFundName">-</h5>
+            <div class="estimate-value positive" id="demoEstimate">+1.23%</div>
+
+            <div class="row text-center mt-4">
+                <div class="col-4">
+                    <div class="h6 text-success">85.2%</div>
+                    <small class="text-muted">成功计算</small>
+                </div>
+                <div class="col-4">
+                    <div class="h6 text-warning">10.5%</div>
+                    <small class="text-muted">未开盘</small>
+                </div>
+                <div class="col-4">
+                    <div class="h6 text-danger">4.3%</div>
+                    <small class="text-muted">查询失败</small>
+                </div>
+            </div>
+
+            <div class="text-muted mt-3">
+                <i class="bi bi-clock"></i> 更新时间: <span id="updateTime"></span>
+            </div>
+
+            <button class="btn btn-outline-primary mt-3" onclick="backToList()">
+                <i class="bi bi-arrow-left"></i> 返回列表
+            </button>
+        </div>
+
+        <!-- 技术栈与部署说明 -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-code-square"></i> 项目架构</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <h6 class="text-primary">前端技术</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> Bootstrap 5 响应式UI</li>
+                            <li><i class="bi bi-check-circle text-success"></i> 现代CSS动画效果</li>
+                            <li><i class="bi bi-check-circle text-success"></i> 移动端适配优化</li>
+                        </ul>
+                    </div>
+                    <div class="col-12">
+                        <h6 class="text-primary">后端技术</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> Flask Web框架</li>
+                            <li><i class="bi bi-check-circle text-success"></i> yfinance股价数据</li>
+                            <li><i class="bi bi-check-circle text-success"></i> 智能市场时间判断</li>
+                        </ul>
+                    </div>
+                    <div class="col-12">
+                        <h6 class="text-primary">部署方案</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> Vercel 无服务器部署</li>
+                            <li><i class="bi bi-check-circle text-success"></i> EdgeOne Pages 静态托管</li>
+                            <li><i class="bi bi-check-circle text-success"></i> 一键CI/CD部署</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GitHub链接 -->
+        <div class="text-center">
+            <a href="#" class="btn btn-outline-light btn-sm" disabled>
+                <i class="bi bi-github"></i> 查看源码
+            </a>
+            <small class="d-block text-white-50 mt-2">通过MCP EdgeOne Pages部署</small>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 获取当前时间
+        function getCurrentTime() {
+            return new Date().toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function showDemo(fundName, fundCode) {
+            // 显示加载动画
+            document.getElementById('fundsList').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+
+            setTimeout(() => {
+                document.getElementById('demoFundName').textContent = fundName;
+
+                // 随机生成演示数据
+                const randomChange = (Math.random() - 0.5) * 6; // -3% 到 +3%
+                const demoEstimate = document.getElementById('demoEstimate');
+                demoEstimate.textContent = (randomChange >= 0 ? '+' : '') + randomChange.toFixed(2) + '%';
+                demoEstimate.className = 'estimate-value ' +
+                    (randomChange > 0 ? 'positive' : randomChange < 0 ? 'negative' : 'neutral');
+
+                // 更新时间
+                document.getElementById('updateTime').textContent = getCurrentTime();
+
+                // 显示结果
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('demoResult').style.display = 'block';
+            }, 1500);
+        }
+
+        function backToList() {
+            document.getElementById('demoResult').style.display = 'none';
+            document.getElementById('fundsList').style.display = 'block';
+        }
+
+        // 页面加载动画
+        document.addEventListener('DOMContentLoaded', function() {
+            // 卡片入场动画
+            document.querySelectorAll('.card').forEach((card, index) => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(30px)';
+                setTimeout(() => {
+                    card.style.transition = 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, index * 150);
+            });
+
+            // 标题动画
+            const title = document.querySelector('.display-6');
+            title.style.opacity = '0';
+            title.style.transform = 'translateY(-20px)';
+            setTimeout(() => {
+                title.style.transition = 'all 0.8s ease';
+                title.style.opacity = '1';
+                title.style.transform = 'translateY(0)';
+            }, 300);
+        });
+
+        // 模拟实时数据更新
+        setInterval(() => {
+            const badges = document.querySelectorAll('.badge');
+            badges.forEach(badge => {
+                if (Math.random() > 0.95) {
+                    badge.style.animation = 'pulse 0.5s ease-in-out';
+                    setTimeout(() => badge.style.animation = '', 500);
+                }
+            });
+        }, 3000);
+    </script>
+</body>
+</html>

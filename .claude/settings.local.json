@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__edgeone-pages__deploy_html",
+      "mcp__edgeone-pages__deploy_folder_or_zip"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
