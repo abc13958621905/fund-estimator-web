@@ -654,38 +654,50 @@ HTML_CONTENT = """<!DOCTYPE html>
             <div class="card-body p-0" id="fundsList">
                 <div class="fund-card" onclick="queryFund('007455')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <h6 class="card-title mb-1" id="fund-007455">华夏中证5G通信主题ETF联接A</h6>
                         <small class="text-muted">007455 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('012922')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <h6 class="card-title mb-1" id="fund-012922">汇添富中证生物科技指数A</h6>
                         <small class="text-muted">012922 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('016531')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <h6 class="card-title mb-1" id="fund-016531">易方达蓝筹精选混合</h6>
                         <small class="text-muted">016531 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('000001')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <h6 class="card-title mb-1" id="fund-000001">华夏成长混合</h6>
                         <small class="text-muted">000001 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('110022')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <h6 class="card-title mb-1" id="fund-110022">易方达消费行业股票</h6>
                         <small class="text-muted">110022 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('519066')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <h6 class="card-title mb-1" id="fund-519066">汇添富蓝筹稳健混合A</h6>
                         <small class="text-muted">519066 | 真实数据</small>
+                    </div>
+                </div>
+
+                <!-- 添加任意基金代码输入卡片 -->
+                <div class="fund-card" style="background: rgba(0,123,255,0.1);">
+                    <div class="card-body text-center">
+                        <h6 class="card-title mb-2">🔍 查询任意基金</h6>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control" id="customFundCode" placeholder="输入6位基金代码" maxlength="6">
+                            <button class="btn btn-primary" onclick="queryCustomFund()">查询</button>
+                        </div>
+                        <small class="text-muted">例如: 000300, 161725, 270002</small>
                     </div>
                 </div>
             </div>
@@ -782,6 +794,15 @@ HTML_CONTENT = """<!DOCTYPE html>
                 });
         }
 
+        function queryCustomFund() {
+            const code = document.getElementById('customFundCode').value.trim();
+            if (code.length !== 6 || !/^\\d{6}$/.test(code)) {
+                alert('请输入正确的6位基金代码');
+                return;
+            }
+            queryFund(code);
+        }
+
         function showDetails(code) {
             alert('详细功能开发中，将显示股票代码转换、价格变化等详情');
         }
@@ -791,6 +812,18 @@ HTML_CONTENT = """<!DOCTYPE html>
             document.getElementById('loading').style.display = 'none';
             document.querySelector('#fundsList').parentElement.style.display = 'block';
         }
+
+        // 支持回车键提交
+        document.addEventListener('DOMContentLoaded', function() {
+            const customInput = document.getElementById('customFundCode');
+            if (customInput) {
+                customInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        queryCustomFund();
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>"""
