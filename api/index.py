@@ -144,19 +144,14 @@ def get_real_fund_name_from_web(fund_code):
     # 简化版本：如果网络失败，直接返回默认名称，不再尝试新浪财经
     return f"基金{fund_code}", "默认名称"
 
-# 基金代码数据库 - 运行时动态获取真实名称
-FUND_CODES = [
-    # 科技主题基金
-    "007455", "012922", "016531", "159995", "501018", "003834",
-    # 经典价值基金
-    "000001", "110022", "519066", "161725", "502056", "001632",
-    # 大盘蓝筹基金
-    "320003", "040025", "270042", "110011", "163407", "000248",
-    # 医药健康基金
-    "000711", "004851", "003096", "001550",
-    # 新兴科技基金
-    "001618", "515000", "512760", "159939"
+# 推荐基金代码 - 仅供展示，实际支持任意基金代码
+RECOMMENDED_FUND_CODES = [
+    "007455", "012922", "016531", "000001", "110022", "519066"
 ]
+
+def is_valid_fund_code(fund_code):
+    """验证基金代码格式 (6位数字)"""
+    return bool(fund_code and fund_code.isdigit() and len(fund_code) == 6)
 
 # 动态基金名称缓存
 _fund_names_cache = {}
@@ -432,14 +427,14 @@ def get_stock_price_changes(holdings):
 
 def calculate_fund_estimate_full(fund_code, target_date=None):
     """
-    基于原始fund_estimator.py逻辑的完整基金估值计算 - 使用真实数据
+    基于原始fund_estimator.py逻辑的完整基金估值计算 - 支持任意基金代码
     """
     try:
-        # 检查基金是否在支持列表中
-        if fund_code not in FUND_CODES:
-            return {"error": f"基金代码 {fund_code} 不在支持列表中，当前支持 {len(FUND_CODES)} 只基金"}
+        # 验证基金代码格式
+        if not is_valid_fund_code(fund_code):
+            return {"error": f"基金代码格式错误: {fund_code}，应为6位数字"}
 
-        # 获取真实基金名称
+        # 获取真实基金名称（支持任意基金代码）
         fund_name = get_fund_name_cached(fund_code)
 
         # 加载基金持仓数据
@@ -561,22 +556,54 @@ def get_fund_info_with_external_data(fund_code):
     return fund_info
 
 def search_funds_by_keyword(keyword):
-    """根据关键词搜索基金 - 使用真实基金名称"""
+    """根据关键词搜索基金 - 支持任意基金代码查询"""
     if not keyword:
-        return []
+        # 如果没有关键词，返回推荐基金列表
+        results = []
+        for fund_code in RECOMMENDED_FUND_CODES:
+            fund_name = get_fund_name_cached(fund_code)
+            fund_info = {
+                "code": fund_code,
+                "name": fund_name,
+                "category": FUND_CATEGORIES.get(fund_code, {}),
+                "has_holdings_data": os.path.exists(os.path.join('fund_holdings', f'{fund_code}.csv')),
+                "data_source": "推荐基金"
+            }
+            results.append(fund_info)
+        return results
 
-    keyword = keyword.lower()
+    keyword = keyword.strip()
+
+    # 如果输入的是6位数字，直接作为基金代码查询
+    if is_valid_fund_code(keyword):
+        fund_name = get_fund_name_cached(keyword)
+        fund_info = {
+            "code": keyword,
+            "name": fund_name,
+            "category": FUND_CATEGORIES.get(keyword, {}),
+            "has_holdings_data": os.path.exists(os.path.join('fund_holdings', f'{keyword}.csv')),
+            "data_source": "直接查询"
+        }
+        return [fund_info]
+
+    # 否则在推荐列表中按关键词搜索
+    keyword_lower = keyword.lower()
     results = []
 
-    for fund_code in FUND_CODES:
-        # 获取真实基金名称
+    for fund_code in RECOMMENDED_FUND_CODES:
         fund_name = get_fund_name_cached(fund_code)
 
-        if (keyword in fund_code.lower() or
-            keyword in fund_name.lower() or
-            any(keyword in str(v).lower() for v in FUND_CATEGORIES.get(fund_code, {}).values())):
+        if (keyword_lower in fund_code.lower() or
+            keyword_lower in fund_name.lower() or
+            any(keyword_lower in str(v).lower() for v in FUND_CATEGORIES.get(fund_code, {}).values())):
 
-            fund_info = get_fund_info_with_external_data(fund_code)
+            fund_info = {
+                "code": fund_code,
+                "name": fund_name,
+                "category": FUND_CATEGORIES.get(fund_code, {}),
+                "has_holdings_data": os.path.exists(os.path.join('fund_holdings', f'{fund_code}.csv')),
+                "data_source": "搜索结果"
+            }
             results.append(fund_info)
 
     return results[:20]
@@ -610,19 +637,20 @@ HTML_CONTENT = """<!DOCTYPE html>
         </div>
 
         <div class="success-notice text-center">
-            <h5>🎉 已集成fund_estimator.py真实数据！</h5>
+            <h5>🎉 支持任意基金代码查询！</h5>
             <p class="mb-1">使用新浪财经+腾讯财经获取真实股价数据</p>
-            <small>现已支持{len(FUND_CODES)}只基金，真实基金名称+真实股价</small>
+            <small>输入任意6位基金代码，自动获取基金名称+持仓+实时估值</small>
         </div>
 
         <div class="card">
             <div class="card-body">
-                <input type="text" class="form-control" id="searchInput" placeholder="输入基金代码或名称搜索..." />
+                <input type="text" class="form-control" id="searchInput" placeholder="输入6位基金代码 (如: 110022) 或基金名称搜索..." />
+                <small class="text-muted mt-2 d-block">💡 提示: 直接输入基金代码即可查询任意基金</small>
             </div>
         </div>
 
         <div class="card">
-            <div class="card-header"><h6 class="mb-0">📊 支持的基金 ({len(FUND_CODES)}只)</h6></div>
+            <div class="card-header"><h6 class="mb-0">📊 推荐基金 (支持任意基金代码)</h6></div>
             <div class="card-body p-0" id="fundsList">
                 <div class="fund-card" onclick="queryFund('007455')">
                     <div class="card-body">
@@ -817,13 +845,15 @@ class handler(BaseHTTPRequestHandler):
 
                 response = {
                     "status": "ok",
-                    "message": "基金估值API运行正常",
+                    "message": "基金估值API运行正常 - 支持任意基金代码",
                     "time": datetime.datetime.now().isoformat(),
-                    "supported_funds": len(FUND_CODES),
-                    "features": ["真实股价获取", "fund_estimator.py完整逻辑", "智能代码转换", "全球时间判断", "多数据源股价"],
-                    "data_sources": ["新浪财经实时股价", "腾讯财经备用", "天天基金基金信息", "智能模拟持仓"],
+                    "supported_funds": "任意6位基金代码",
+                    "recommended_funds": len(RECOMMENDED_FUND_CODES),
+                    "features": ["任意基金代码查询", "真实股价获取", "fund_estimator.py完整逻辑", "智能代码转换", "全球时间判断"],
+                    "data_sources": ["新浪财经实时股价", "天天基金基金信息", "智能模拟持仓"],
                     "calculation_mode": determine_calculation_mode(),
-                    "platform": "Vercel + fund_estimator.py真实数据引擎"
+                    "platform": "Vercel + fund_estimator.py真实数据引擎",
+                    "usage": "直接输入6位基金代码即可查询任意基金"
                 }
 
                 self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
