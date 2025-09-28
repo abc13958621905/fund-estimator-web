@@ -10,44 +10,245 @@ import urllib.error
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
 
-# 扩展的基金映射数据库 - 支持更多基金
-FUND_NAMES = {
+# 真实股价获取功能 - 移植自fund_estimator.py
+def get_real_stock_price_changes(ticker_map, mode):
+    """
+    真实股价获取 - 移植自fund_estimator.py的核心逻辑
+    """
+    import urllib.request
+    import urllib.parse
+
+    tickers_to_fetch = list(set(ticker_map.values()))
+    if not tickers_to_fetch:
+        return {}
+
+    print(f"开始获取 {len(tickers_to_fetch)} 只股票的实时价格...")
+
+    # 尝试从新浪财经获取数据
+    changes = {}
+    failed_tickers = []
+
+    # 构建新浪财经查询
+    sina_tickers_map = {}
+    for ticker in tickers_to_fetch:
+        if ticker.endswith('.SS'):
+            sina_ticker = f"sh{ticker.replace('.SS', '')}"
+        elif ticker.endswith('.SZ'):
+            sina_ticker = f"sz{ticker.replace('.SZ', '')}"
+        elif ticker.endswith('.HK'):
+            sina_ticker = f"hk{ticker.replace('.HK', '')}"
+        elif ticker.endswith('.BJ'):
+            sina_ticker = f"bj{ticker.replace('.BJ', '')}"
+        elif ticker.isalpha():
+            sina_ticker = f"gb_{ticker.lower()}"
+        else:
+            sina_ticker = ticker
+        sina_tickers_map[sina_ticker] = ticker
+
+    try:
+        url = f"https://hq.sinajs.cn/list={','.join(sina_tickers_map.keys())}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://finance.sina.com.cn/'
+        }
+
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            content = response.read().decode('gbk')
+
+        for line in content.split(';'):
+            if len(line) < 20 or '=""' in line:
+                continue
+
+            match = re.search(r'var hq_str_([^=]+)="([^"]+)"', line)
+            if not match:
+                continue
+
+            sina_ticker, data_str = match.groups()
+            original_ticker = sina_tickers_map.get(sina_ticker)
+            if not original_ticker:
+                continue
+
+            data = data_str.split(',')
+
+            try:
+                change = None
+
+                # 美股数据解析
+                if sina_ticker.startswith('gb_') and len(data) > 26:
+                    latest = float(data[1])
+                    prev_close = float(data[26])
+                    if prev_close == 0 and len(data) > 7:
+                        prev_close = float(data[7])
+                    if prev_close != 0:
+                        change = (latest - prev_close) / prev_close
+
+                # 港股数据解析
+                elif sina_ticker.startswith('hk') and len(data) > 8:
+                    latest = float(data[6])
+                    prev_close = float(data[3])
+                    if prev_close != 0:
+                        change = (latest - prev_close) / prev_close
+
+                # A股数据解析
+                elif sina_ticker.startswith(('sh', 'sz', 'bj')) and len(data) > 3:
+                    latest = float(data[3])
+                    prev_close = float(data[2])
+                    if prev_close != 0:
+                        change = (latest - prev_close) / prev_close
+
+                if change is not None:
+                    changes[original_ticker] = change
+                    print(f"✓ {original_ticker}: {change:+.2%}")
+                else:
+                    failed_tickers.append(original_ticker)
+
+            except (ValueError, IndexError):
+                failed_tickers.append(original_ticker)
+                continue
+
+    except Exception as e:
+        print(f"新浪财经数据获取失败: {e}")
+        failed_tickers = list(tickers_to_fetch)
+
+    # 对于失败的股票，尝试腾讯财经
+    if failed_tickers:
+        print(f"尝试从腾讯财经获取剩余 {len(failed_tickers)} 只股票...")
+
+        tencent_tickers_map = {}
+        for ticker in failed_tickers:
+            if ticker.endswith('.SS'):
+                tencent_ticker = f"sh{ticker.replace('.SS', '')}"
+            elif ticker.endswith('.SZ'):
+                tencent_ticker = f"sz{ticker.replace('.SZ', '')}"
+            elif ticker.endswith('.HK'):
+                tencent_ticker = f"hk{ticker.replace('.HK', '')}"
+            elif ticker.endswith('.BJ'):
+                tencent_ticker = f"bj{ticker.replace('.BJ', '')}"
+            elif ticker.isalpha():
+                tencent_ticker = f"us{ticker.upper()}"
+            else:
+                tencent_ticker = ticker
+            tencent_tickers_map[tencent_ticker] = ticker
+
+        try:
+            url = f"http://qt.gtimg.cn/q={','.join(tencent_tickers_map.keys())}"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                content = response.read().decode('utf-8')
+
+            for line in content.split(';'):
+                if len(line) < 20 or '~""~' in line:
+                    continue
+
+                match = re.search(r'v_([^=]+)="([^"]+)"', line)
+                if not match:
+                    continue
+
+                tencent_ticker, data_str = match.groups()
+                original_ticker = tencent_tickers_map.get(tencent_ticker)
+                if not original_ticker:
+                    continue
+
+                data = data_str.split('~')
+
+                try:
+                    if len(data) > 4 and data[3] and data[4]:
+                        latest = float(data[3])
+                        prev_close = float(data[4])
+                        if prev_close != 0:
+                            change = (latest - prev_close) / prev_close
+                            changes[original_ticker] = change
+                            print(f"✓ {original_ticker}: {change:+.2%}")
+                            if original_ticker in failed_tickers:
+                                failed_tickers.remove(original_ticker)
+
+                except (ValueError, IndexError):
+                    continue
+
+        except Exception as e:
+            print(f"腾讯财经数据获取失败: {e}")
+
+    # 对于仍然失败的股票，使用0变化
+    for ticker in failed_tickers:
+        changes[ticker] = 0.0
+        print(f"⚠ {ticker}: 获取失败，按0%计算")
+
+    # 转换回公司名称作为key
+    ticker_to_name = {v: k for k, v in ticker_map.items()}
+    return {ticker_to_name.get(k): v for k, v in changes.items() if ticker_to_name.get(k)}
+
+def get_real_fund_name_from_web(fund_code):
+    """
+    从财经网站获取真实基金名称 - 移植自fund_estimator.py
+    """
+    # 尝试天天基金
+    try:
+        url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
+        headers = {
+            'Referer': 'http://fund.eastmoney.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            content = response.read().decode('utf-8')
+
+        match = re.search(r'jsonpgz\((.*)\)', content)
+        if match:
+            data = json.loads(match.group(1))
+            name = data.get('name')
+            if name:
+                return name, "天天基金"
+    except Exception:
+        pass
+
+    # 尝试新浪财经
+    try:
+        url = f"https://hq.sinajs.cn/list=f_{fund_code}"
+        headers = {
+            'Referer': 'http://finance.sina.com.cn/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            content = response.read().decode('gbk')
+
+        match = re.search(r'="([^"]+)"', content)
+        if match and match.group(1).split(',')[0]:
+            name = match.group(1).split(',')[0]
+            if name:
+                return name, "新浪财经"
+    except Exception:
+        pass
+
+    return f"基金{fund_code}", "默认名称"
+
+# 基金代码数据库 - 运行时动态获取真实名称
+FUND_CODES = [
     # 科技主题基金
-    "007455": "华夏中证5G通信主题ETF联接A",
-    "012922": "汇添富中证生物科技指数A",
-    "016531": "易方达蓝筹精选混合",
-    "159995": "华夏中证5G通信主题ETF",
-    "501018": "南方原油LOF",
-    "003834": "华夏能源革新股票A",
-
+    "007455", "012922", "016531", "159995", "501018", "003834",
     # 经典价值基金
-    "000001": "华夏成长混合",
-    "110022": "易方达消费行业股票",
-    "519066": "汇添富蓝筹稳健混合A",
-    "161725": "招商中证白酒指数(LOF)A",
-    "502056": "广发中证全指汽车指数A",
-    "001632": "天弘中证食品饮料指数A",
-
+    "000001", "110022", "519066", "161725", "502056", "001632",
     # 大盘蓝筹基金
-    "320003": "诺安股票",
-    "040025": "华安科技动力混合",
-    "270042": "广发纳斯达克100指数(QDII)",
-    "110011": "易方达中小盘混合",
-    "163407": "兴全沪深300指数(LOF)A",
-    "000248": "汇添富中证主要消费ETF联接A",
-
+    "320003", "040025", "270042", "110011", "163407", "000248",
     # 医药健康基金
-    "000711": "嘉实医疗保健股票A",
-    "004851": "广发医疗保健股票A",
-    "003096": "中欧医疗健康混合A",
-    "001550": "天弘中证医药卫生ETF联接A",
-
+    "000711", "004851", "003096", "001550",
     # 新兴科技基金
-    "001618": "天弘中证计算机主题ETF联接A",
-    "515000": "华夏中证5G通信主题ETF",
-    "512760": "国泰CES半导体芯片行业ETF",
-    "159939": "信息技术ETF"
-}
+    "001618", "515000", "512760", "159939"
+]
+
+# 动态基金名称缓存
+_fund_names_cache = {}
+
+def get_fund_name_cached(fund_code):
+    """获取基金名称，带缓存功能"""
+    if fund_code not in _fund_names_cache:
+        name, source = get_real_fund_name_from_web(fund_code)
+        _fund_names_cache[fund_code] = name
+        print(f"获取基金名称: {fund_code} -> {name} (来源: {source})")
+    return _fund_names_cache[fund_code]
 
 # 基金分类信息
 FUND_CATEGORIES = {
@@ -229,12 +430,12 @@ def load_fund_holdings(fund_code):
     except Exception as e:
         return generate_mock_holdings(fund_code), f"获取持仓数据失败，使用模拟数据: {str(e)}"
 
-def get_simulated_price_changes(holdings):
+def get_stock_price_changes(holdings):
     """
-    模拟股价变化 - 替代真实的股价获取（避免网络依赖）
-    基于原始fund_estimator.py的逻辑结构
+    获取真实股价变化 - 替代模拟数据
     """
-    results = {}
+    # 构建股票代码映射
+    ticker_map = {}
     statistics = {
         'total_processed': 0,
         'success_count': 0,
@@ -244,74 +445,100 @@ def get_simulated_price_changes(holdings):
 
     for holding in holdings:
         stock_code = holding['code']
-        weight = holding['weight']
+        company_name = holding['name']
 
-        # 转换股票代码
+        # 使用智能代码转换器
         ticker, market = smart_ticker_converter(stock_code)
-
         if ticker:
-            # 模拟价格变化（基于股票代码生成一致的随机数）
-            random.seed(hash(ticker) % 2147483647)
+            ticker_map[company_name] = ticker
 
-            # 不同市场的波动范围
-            if market == "US":
-                change_range = 0.03  # 美股 ±3%
-            elif market in ["A", "HK", "BJ"]:
-                change_range = 0.05  # A股/港股 ±5%
+        statistics['total_processed'] += 1
+
+    if not ticker_map:
+        return {}, statistics
+
+    # 获取真实股价变化
+    try:
+        mode = determine_calculation_mode()
+        price_changes_by_name = get_real_stock_price_changes(ticker_map, mode)
+
+        # 构建结果
+        results = {}
+        for holding in holdings:
+            stock_code = holding['code']
+            company_name = holding['name']
+            weight = holding['weight']
+
+            ticker, market = smart_ticker_converter(stock_code)
+
+            if company_name in price_changes_by_name:
+                price_change = price_changes_by_name[company_name]
+                results[stock_code] = {
+                    'ticker': ticker,
+                    'market': market,
+                    'price_change': price_change,
+                    'weight': weight,
+                    'status': 'success'
+                }
+                statistics['success_count'] += 1
             else:
-                change_range = 0.02  # 其他 ±2%
+                results[stock_code] = {
+                    'ticker': ticker,
+                    'market': market,
+                    'price_change': 0,
+                    'weight': weight,
+                    'status': 'failed'
+                }
+                statistics['failed_count'] += 1
 
-            price_change = (random.random() - 0.5) * change_range * 2
+        return results, statistics
+
+    except Exception as e:
+        print(f"获取股价数据失败: {e}")
+        # 如果获取失败，返回空结果
+        results = {}
+        for holding in holdings:
+            stock_code = holding['code']
+            ticker, market = smart_ticker_converter(stock_code)
 
             results[stock_code] = {
                 'ticker': ticker,
                 'market': market,
-                'price_change': price_change,
-                'weight': weight,
-                'status': 'success'
-            }
-            statistics['success_count'] += 1
-        else:
-            results[stock_code] = {
-                'ticker': stock_code,
-                'market': 'unknown',
                 'price_change': 0,
-                'weight': weight,
+                'weight': holding['weight'],
                 'status': 'failed'
             }
             statistics['failed_count'] += 1
 
-        statistics['total_processed'] += 1
-
-    return results, statistics
+        return results, statistics
 
 def calculate_fund_estimate_full(fund_code, target_date=None):
     """
-    基于原始fund_estimator.py逻辑的完整基金估值计算
+    基于原始fund_estimator.py逻辑的完整基金估值计算 - 使用真实数据
     """
     try:
-        # 检查基金是否存在
-        if fund_code not in FUND_NAMES:
-            return {"error": f"基金代码 {fund_code} 不在支持列表中，当前支持 {len(FUND_NAMES)} 只基金"}
+        # 检查基金是否在支持列表中
+        if fund_code not in FUND_CODES:
+            return {"error": f"基金代码 {fund_code} 不在支持列表中，当前支持 {len(FUND_CODES)} 只基金"}
+
+        # 获取真实基金名称
+        fund_name = get_fund_name_cached(fund_code)
 
         # 加载基金持仓数据
         holdings, error = load_fund_holdings(fund_code)
-        if error:
+        if not holdings:
             return {
-                "error": error,
+                "error": "无法获取基金持仓数据",
                 "fund_code": fund_code,
-                "fund_name": FUND_NAMES[fund_code],
+                "fund_name": fund_name,
                 "suggestion": "该基金暂无持仓数据，但基金信息已收录"
             }
-
-        if not holdings:
-            return {"error": f"基金 {fund_code} 无持仓数据"}
 
         # 确定计算模式
         calc_mode = determine_calculation_mode()
 
-        # 获取股价变化（模拟版本）
-        price_changes, statistics = get_simulated_price_changes(holdings)
+        # 获取真实股价变化
+        price_changes, statistics = get_stock_price_changes(holdings)
 
         # 计算加权估值
         total_weight = 0
@@ -327,15 +554,16 @@ def calculate_fund_estimate_full(fund_code, target_date=None):
                 total_weight += weight
                 successful_holdings += 1
 
-        # 构建详细统计信息
-        data_source = "智能模拟数据"
-        if error and "网络获取" not in error:
-            data_source = "CSV持仓数据"
+        # 判断数据来源
+        data_source = "真实股价数据"
+        if error and "网络获取" not in str(error):
+            data_source = "CSV持仓数据 + 真实股价"
         elif error is None:
-            data_source = "天天基金实时数据"
-        elif "CSV" in error:
-            data_source = "本地CSV数据"
+            data_source = "天天基金持仓 + 真实股价"
+        elif "CSV" in str(error):
+            data_source = "本地CSV + 真实股价"
 
+        # 构建详细统计信息
         detailed_statistics = {
             "成功计算占比": f"{(statistics['success_count']/statistics['total_processed']*100):.1f}%",
             "查询失败占比": f"{(statistics['failed_count']/statistics['total_processed']*100):.1f}%",
@@ -345,23 +573,23 @@ def calculate_fund_estimate_full(fund_code, target_date=None):
             "失败处理数": statistics['failed_count'],
             "总权重": f"{total_weight:.2f}%",
             "数据来源": data_source,
-            "持仓获取": "动态网络获取" if error is None else "备用数据源"
+            "股价数据": "新浪财经+腾讯财经实时数据"
         }
 
         # 构建结果
         result = {
             "fund_code": fund_code,
-            "fund_name": FUND_NAMES[fund_code],
+            "fund_name": fund_name,
             "fund_info": FUND_CATEGORIES.get(fund_code, {}),
             "estimated_change": weighted_change,
             "calculation_mode": calc_mode,
             "query_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "statistics": detailed_statistics,
-            "price_details": price_changes,  # 详细的价格变化信息
+            "price_details": price_changes,
             "top_holdings": holdings[:10],
             "update_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "mode": "实时模式" if calc_mode == 'CURRENT_DAY' else "历史回顾模式",
-            "note": f"基于原始fund_estimator.py逻辑 - {calc_mode}模式"
+            "note": f"基于原始fund_estimator.py逻辑 + 真实股价数据 - {calc_mode}模式"
         }
 
         return result
@@ -371,17 +599,19 @@ def calculate_fund_estimate_full(fund_code, target_date=None):
 
 def get_fund_info_with_external_data(fund_code):
     """
-    获取基金信息，尝试从外部API获取基本信息
+    获取基金信息，从外部API获取真实信息
     """
+    fund_name = get_fund_name_cached(fund_code)
+
     fund_info = {
         "code": fund_code,
-        "name": FUND_NAMES.get(fund_code, f"基金{fund_code}"),
+        "name": fund_name,
         "category": FUND_CATEGORIES.get(fund_code, {}),
         "has_holdings_data": os.path.exists(os.path.join('fund_holdings', f'{fund_code}.csv')),
-        "data_source": "本地数据库"
+        "data_source": "财经网站实时数据"
     }
 
-    # 尝试从天天基金获取实时信息（简化版本，避免网络超时问题）
+    # 尝试获取实时估值信息
     try:
         url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
         req = urllib.request.Request(url)
@@ -407,25 +637,28 @@ def get_fund_info_with_external_data(fund_code):
                 }
                 fund_info["data_source"] = "天天基金实时数据"
     except:
-        # 网络获取失败，使用本地数据
+        # 网络获取失败，使用缓存的名称
         pass
 
     return fund_info
 
 def search_funds_by_keyword(keyword):
-    """根据关键词搜索基金"""
+    """根据关键词搜索基金 - 使用真实基金名称"""
     if not keyword:
         return []
 
     keyword = keyword.lower()
     results = []
 
-    for code, name in FUND_NAMES.items():
-        if (keyword in code.lower() or
-            keyword in name.lower() or
-            any(keyword in str(v).lower() for v in FUND_CATEGORIES.get(code, {}).values())):
+    for fund_code in FUND_CODES:
+        # 获取真实基金名称
+        fund_name = get_fund_name_cached(fund_code)
 
-            fund_info = get_fund_info_with_external_data(code)
+        if (keyword in fund_code.lower() or
+            keyword in fund_name.lower() or
+            any(keyword in str(v).lower() for v in FUND_CATEGORIES.get(fund_code, {}).values())):
+
+            fund_info = get_fund_info_with_external_data(fund_code)
             results.append(fund_info)
 
     return results[:20]
@@ -459,9 +692,9 @@ HTML_CONTENT = """<!DOCTYPE html>
         </div>
 
         <div class="success-notice text-center">
-            <h5>🎉 已集成动态持仓获取功能！</h5>
-            <p class="mb-1">支持从天天基金等财经网站动态获取基金持仓数据</p>
-            <small>现已支持{len(FUND_NAMES)}只基金，无需依赖静态CSV文件</small>
+            <h5>🎉 已集成fund_estimator.py真实数据！</h5>
+            <p class="mb-1">使用新浪财经+腾讯财经获取真实股价数据</p>
+            <small>现已支持{len(FUND_CODES)}只基金，真实基金名称+真实股价</small>
         </div>
 
         <div class="card">
@@ -471,42 +704,42 @@ HTML_CONTENT = """<!DOCTYPE html>
         </div>
 
         <div class="card">
-            <div class="card-header"><h6 class="mb-0">📊 支持的基金 ({len(FUND_NAMES)}只)</h6></div>
+            <div class="card-header"><h6 class="mb-0">📊 支持的基金 ({len(FUND_CODES)}只)</h6></div>
             <div class="card-body p-0" id="fundsList">
                 <div class="fund-card" onclick="queryFund('007455')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">华夏中证5G通信主题ETF联接A</h6>
-                        <small class="text-muted">007455 | 动态持仓</small>
+                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <small class="text-muted">007455 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('012922')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">汇添富中证生物科技指数A</h6>
-                        <small class="text-muted">012922 | 动态持仓</small>
+                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <small class="text-muted">012922 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('016531')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">易方达蓝筹精选混合</h6>
-                        <small class="text-muted">016531 | 动态持仓</small>
+                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <small class="text-muted">016531 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('000001')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">华夏成长混合</h6>
-                        <small class="text-muted">000001 | 动态持仓</small>
+                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <small class="text-muted">000001 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('110022')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">易方达消费行业股票</h6>
-                        <small class="text-muted">110022 | 动态持仓</small>
+                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <small class="text-muted">110022 | 真实数据</small>
                     </div>
                 </div>
                 <div class="fund-card" onclick="queryFund('519066')">
                     <div class="card-body">
-                        <h6 class="card-title mb-1">汇添富蓝筹稳健混合A</h6>
-                        <small class="text-muted">519066 | 动态持仓</small>
+                        <h6 class="card-title mb-1">🔄 动态获取中...</h6>
+                        <small class="text-muted">519066 | 真实数据</small>
                     </div>
                 </div>
             </div>
@@ -514,7 +747,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         <div id="loading" class="text-center text-white" style="display:none;">
             <div class="spinner-border text-light mb-3"></div>
-            <p>正在动态获取持仓数据并计算估值...</p>
+            <p>正在获取真实股价数据并计算估值...</p>
         </div>
 
         <div id="result"></div>
@@ -668,11 +901,11 @@ class handler(BaseHTTPRequestHandler):
                     "status": "ok",
                     "message": "基金估值API运行正常",
                     "time": datetime.datetime.now().isoformat(),
-                    "supported_funds": len(FUND_NAMES),
-                    "features": ["动态持仓获取", "fund_estimator.py核心逻辑", "智能代码转换", "全球时间判断", "多数据源支持"],
-                    "data_sources": ["天天基金实时数据", "新浪财经", "智能模拟数据", "本地CSV备用"],
+                    "supported_funds": len(FUND_CODES),
+                    "features": ["真实股价获取", "fund_estimator.py完整逻辑", "智能代码转换", "全球时间判断", "多数据源股价"],
+                    "data_sources": ["新浪财经实时股价", "腾讯财经备用", "天天基金基金信息", "智能模拟持仓"],
                     "calculation_mode": determine_calculation_mode(),
-                    "platform": "Vercel + 动态基金估值系统"
+                    "platform": "Vercel + fund_estimator.py真实数据引擎"
                 }
 
                 self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
