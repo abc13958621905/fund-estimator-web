@@ -10,27 +10,22 @@ import urllib.error
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
 
-# 真实股价获取功能 - 移植自fund_estimator.py
+# 真实股价获取功能 - 移植自fund_estimator.py (Vercel优化版)
 def get_real_stock_price_changes(ticker_map, mode):
     """
-    真实股价获取 - 移植自fund_estimator.py的核心逻辑
+    真实股价获取 - 移植自fund_estimator.py的核心逻辑 (Vercel优化)
     """
-    import urllib.request
-    import urllib.parse
-
     tickers_to_fetch = list(set(ticker_map.values()))
     if not tickers_to_fetch:
         return {}
 
-    print(f"开始获取 {len(tickers_to_fetch)} 只股票的实时价格...")
-
-    # 尝试从新浪财经获取数据
+    # 尝试从新浪财经获取数据 (简化版本，适配Vercel)
     changes = {}
     failed_tickers = []
 
-    # 构建新浪财经查询
+    # 构建新浪财经查询 - 限制数量避免超时
     sina_tickers_map = {}
-    for ticker in tickers_to_fetch:
+    for ticker in tickers_to_fetch[:10]:  # 限制最多10只股票避免超时
         if ticker.endswith('.SS'):
             sina_ticker = f"sh{ticker.replace('.SS', '')}"
         elif ticker.endswith('.SZ'):
@@ -53,8 +48,11 @@ def get_real_stock_price_changes(ticker_map, mode):
         }
 
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as response:
-            content = response.read().decode('gbk')
+        with urllib.request.urlopen(req, timeout=5) as response:  # 缩短超时时间
+            try:
+                content = response.read().decode('gbk')
+            except UnicodeDecodeError:
+                content = response.read().decode('utf-8', errors='ignore')
 
         for line in content.split(';'):
             if len(line) < 20 or '=""' in line:
@@ -74,12 +72,10 @@ def get_real_stock_price_changes(ticker_map, mode):
             try:
                 change = None
 
-                # 美股数据解析
-                if sina_ticker.startswith('gb_') and len(data) > 26:
-                    latest = float(data[1])
-                    prev_close = float(data[26])
-                    if prev_close == 0 and len(data) > 7:
-                        prev_close = float(data[7])
+                # A股数据解析 (优先处理，最常用)
+                if sina_ticker.startswith(('sh', 'sz', 'bj')) and len(data) > 3:
+                    latest = float(data[3])
+                    prev_close = float(data[2])
                     if prev_close != 0:
                         change = (latest - prev_close) / prev_close
 
@@ -90,16 +86,17 @@ def get_real_stock_price_changes(ticker_map, mode):
                     if prev_close != 0:
                         change = (latest - prev_close) / prev_close
 
-                # A股数据解析
-                elif sina_ticker.startswith(('sh', 'sz', 'bj')) and len(data) > 3:
-                    latest = float(data[3])
-                    prev_close = float(data[2])
+                # 美股数据解析
+                elif sina_ticker.startswith('gb_') and len(data) > 26:
+                    latest = float(data[1])
+                    prev_close = float(data[26])
+                    if prev_close == 0 and len(data) > 7:
+                        prev_close = float(data[7])
                     if prev_close != 0:
                         change = (latest - prev_close) / prev_close
 
                 if change is not None:
                     changes[original_ticker] = change
-                    print(f"✓ {original_ticker}: {change:+.2%}")
                 else:
                     failed_tickers.append(original_ticker)
 
@@ -108,71 +105,12 @@ def get_real_stock_price_changes(ticker_map, mode):
                 continue
 
     except Exception as e:
-        print(f"新浪财经数据获取失败: {e}")
+        # 如果新浪财经失败，将所有股票标记为失败
         failed_tickers = list(tickers_to_fetch)
 
-    # 对于失败的股票，尝试腾讯财经
-    if failed_tickers:
-        print(f"尝试从腾讯财经获取剩余 {len(failed_tickers)} 只股票...")
-
-        tencent_tickers_map = {}
-        for ticker in failed_tickers:
-            if ticker.endswith('.SS'):
-                tencent_ticker = f"sh{ticker.replace('.SS', '')}"
-            elif ticker.endswith('.SZ'):
-                tencent_ticker = f"sz{ticker.replace('.SZ', '')}"
-            elif ticker.endswith('.HK'):
-                tencent_ticker = f"hk{ticker.replace('.HK', '')}"
-            elif ticker.endswith('.BJ'):
-                tencent_ticker = f"bj{ticker.replace('.BJ', '')}"
-            elif ticker.isalpha():
-                tencent_ticker = f"us{ticker.upper()}"
-            else:
-                tencent_ticker = ticker
-            tencent_tickers_map[tencent_ticker] = ticker
-
-        try:
-            url = f"http://qt.gtimg.cn/q={','.join(tencent_tickers_map.keys())}"
-            req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=10) as response:
-                content = response.read().decode('utf-8')
-
-            for line in content.split(';'):
-                if len(line) < 20 or '~""~' in line:
-                    continue
-
-                match = re.search(r'v_([^=]+)="([^"]+)"', line)
-                if not match:
-                    continue
-
-                tencent_ticker, data_str = match.groups()
-                original_ticker = tencent_tickers_map.get(tencent_ticker)
-                if not original_ticker:
-                    continue
-
-                data = data_str.split('~')
-
-                try:
-                    if len(data) > 4 and data[3] and data[4]:
-                        latest = float(data[3])
-                        prev_close = float(data[4])
-                        if prev_close != 0:
-                            change = (latest - prev_close) / prev_close
-                            changes[original_ticker] = change
-                            print(f"✓ {original_ticker}: {change:+.2%}")
-                            if original_ticker in failed_tickers:
-                                failed_tickers.remove(original_ticker)
-
-                except (ValueError, IndexError):
-                    continue
-
-        except Exception as e:
-            print(f"腾讯财经数据获取失败: {e}")
-
-    # 对于仍然失败的股票，使用0变化
+    # 对于失败的股票，使用0变化 (简化版本，不再尝试腾讯财经避免超时)
     for ticker in failed_tickers:
         changes[ticker] = 0.0
-        print(f"⚠ {ticker}: 获取失败，按0%计算")
 
     # 转换回公司名称作为key
     ticker_to_name = {v: k for k, v in ticker_map.items()}
@@ -180,9 +118,9 @@ def get_real_stock_price_changes(ticker_map, mode):
 
 def get_real_fund_name_from_web(fund_code):
     """
-    从财经网站获取真实基金名称 - 移植自fund_estimator.py
+    从财经网站获取真实基金名称 - 移植自fund_estimator.py (Vercel优化)
     """
-    # 尝试天天基金
+    # 尝试天天基金 (缩短超时时间)
     try:
         url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
         headers = {
@@ -191,7 +129,7 @@ def get_real_fund_name_from_web(fund_code):
         }
 
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=3) as response:  # 缩短超时时间
             content = response.read().decode('utf-8')
 
         match = re.search(r'jsonpgz\((.*)\)', content)
@@ -203,26 +141,7 @@ def get_real_fund_name_from_web(fund_code):
     except Exception:
         pass
 
-    # 尝试新浪财经
-    try:
-        url = f"https://hq.sinajs.cn/list=f_{fund_code}"
-        headers = {
-            'Referer': 'http://finance.sina.com.cn/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            content = response.read().decode('gbk')
-
-        match = re.search(r'="([^"]+)"', content)
-        if match and match.group(1).split(',')[0]:
-            name = match.group(1).split(',')[0]
-            if name:
-                return name, "新浪财经"
-    except Exception:
-        pass
-
+    # 简化版本：如果网络失败，直接返回默认名称，不再尝试新浪财经
     return f"基金{fund_code}", "默认名称"
 
 # 基金代码数据库 - 运行时动态获取真实名称
@@ -243,11 +162,11 @@ FUND_CODES = [
 _fund_names_cache = {}
 
 def get_fund_name_cached(fund_code):
-    """获取基金名称，带缓存功能"""
+    """获取基金名称，带缓存功能 (Vercel优化)"""
     if fund_code not in _fund_names_cache:
         name, source = get_real_fund_name_from_web(fund_code)
         _fund_names_cache[fund_code] = name
-        print(f"获取基金名称: {fund_code} -> {name} (来源: {source})")
+        # 移除print语句避免Vercel日志过多
     return _fund_names_cache[fund_code]
 
 # 基金分类信息
@@ -494,8 +413,7 @@ def get_stock_price_changes(holdings):
         return results, statistics
 
     except Exception as e:
-        print(f"获取股价数据失败: {e}")
-        # 如果获取失败，返回空结果
+        # 如果获取失败，返回空结果 (Vercel优化：移除print避免错误)
         results = {}
         for holding in holdings:
             stock_code = holding['code']
